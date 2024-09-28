@@ -1,6 +1,4 @@
-import WebSocket from 'ws'
-import EasyDebug, {EEasyDebugLogLevel} from './EasyDebug.mjs'
-
+import EasyDebug, { EEasyDebugLogLevel } from "./EasyDebug.mts";
 export default class EasyWS {
     private readonly TAG
     private _options: IEasyWSOptions
@@ -29,7 +27,7 @@ export default class EasyWS {
     private _socket?: WebSocket
     private _connected = false
     private _messageQueue: QueueItem[] = []
-    private _reconnectIntervalHandle?: NodeJS.Timeout
+    private _reconnectIntervalHandle?: number
     private _resolverQueue: Map<string, (result: any) => void> = new Map()
 
     init() {
@@ -78,17 +76,16 @@ export default class EasyWS {
         this._socket?.close()
         this._socket = undefined
         this._socket = new WebSocket(this._options.serverUrl)
-        this._socket.onopen = onOpen.bind(this)
-        this._socket.onclose = onClose.bind(this)
-        this._socket.onmessage = onMessage.bind(this)
-        this._socket.onerror = onError.bind(this)
-        const self = this;
+        this._socket.onopen = (ev => onOpen(this, ev))
+        this._socket.onclose = (ev => onClose(this, ev))
+        this._socket.onmessage = (ev => onMessage(this, ev))
+        this._socket.onerror = (ev => onError(this, ev))
 
-        function onOpen(evt: WebSocket.Event) {
+        function onOpen(self: EasyWS, ev: Event) {
             EasyDebug.log(self.TAG, EEasyDebugLogLevel.Info, 'Connected')
             self._connected = true
             self.stopConnectLoop()
-            self._onOpen(evt)
+            self._onOpen(ev)
 
             // Will skip messages that are older than the maximum allowed if a limit is set.
             const maxTime = (self._options.messageMaxQueueSeconds ?? 0)*1000
@@ -101,23 +98,24 @@ export default class EasyWS {
             self._messageQueue = []
         }
 
-        function onClose(evt: WebSocket.CloseEvent) {
+        function onClose(self: EasyWS, ev: CloseEvent) {
             EasyDebug.log(self.TAG, EEasyDebugLogLevel.Info, 'Disconnected')
             self._connected = false
             self.startConnectLoop()
-            self._onClose(evt)
+            self._onClose(ev)
         }
 
-        function onMessage(evt: WebSocket.MessageEvent) {
-            EasyDebug.log(self.TAG, EEasyDebugLogLevel.Verbose, 'Received message', evt.data)
-            self._onMessage(evt)
+        function onMessage(self: EasyWS, ev: MessageEvent) {
+            EasyDebug.log(self.TAG, EEasyDebugLogLevel.Verbose, 'Received message', ev.data)
+            self._onMessage(ev)
         }
 
-        function onError(evt: WebSocket.ErrorEvent) {
-            EasyDebug.log(self.TAG, EEasyDebugLogLevel.Error, 'Error', evt.message)
+        function onError(self: EasyWS, ev: Event|ErrorEvent) {
+            const message = ev instanceof ErrorEvent ? ev.message : 'Unknown issue'
+            EasyDebug.log(self.TAG, EEasyDebugLogLevel.Error, 'Error', message)
             self._socket?.close()
             self.startConnectLoop()
-            self._onError(evt)
+            self._onError(ev)
         }
     }
 
@@ -172,19 +170,19 @@ export default class EasyWS {
 
 // region Callbacks
 export interface IEasyWSOpenCallback {
-    (evt: WebSocket.Event): void
+    (evt: Event): void
 }
 
 export interface IEasyWSCloseCallback {
-    (evt: WebSocket.CloseEvent): void
+    (evt: CloseEvent): void
 }
 
 export interface IEasyWSMessageCallback {
-    (evt: WebSocket.MessageEvent): void
+    (evt: MessageEvent): void
 }
 
 export interface IEasyWSErrorCallback {
-    (evt: WebSocket.ErrorEvent): void
+    (evt: Event|ErrorEvent): void
 }
 // region
 
