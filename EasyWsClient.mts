@@ -1,5 +1,5 @@
 import EasyDebug, { EEasyDebugLogLevel } from "./EasyDebug.mts";
-export default class EasyWS {
+export default class EasyWsClient {
     private readonly TAG
     private _options: IEasyWSOptions
     private _onOpen: IEasyWSOpenCallback
@@ -81,7 +81,7 @@ export default class EasyWS {
         this._socket.onmessage = (ev => onMessage(this, ev))
         this._socket.onerror = (ev => onError(this, ev))
 
-        function onOpen(self: EasyWS, ev: Event) {
+        function onOpen(self: EasyWsClient, ev: Event) {
             EasyDebug.log(self.TAG, EEasyDebugLogLevel.Info, 'Connected')
             self._connected = true
             self.stopConnectLoop()
@@ -98,19 +98,19 @@ export default class EasyWS {
             self._messageQueue = []
         }
 
-        function onClose(self: EasyWS, ev: CloseEvent) {
+        function onClose(self: EasyWsClient, ev: CloseEvent) {
             EasyDebug.log(self.TAG, EEasyDebugLogLevel.Info, 'Disconnected')
             self._connected = false
             self.startConnectLoop()
             self._onClose(ev)
         }
 
-        function onMessage(self: EasyWS, ev: MessageEvent) {
+        function onMessage(self: EasyWsClient, ev: MessageEvent) {
             EasyDebug.log(self.TAG, EEasyDebugLogLevel.Verbose, 'Received message', ev.data)
             self._onMessage(ev)
         }
 
-        function onError(self: EasyWS, ev: Event|ErrorEvent) {
+        function onError(self: EasyWsClient, ev: Event|ErrorEvent) {
             const message = ev instanceof ErrorEvent ? ev.message : 'Unknown issue'
             EasyDebug.log(self.TAG, EEasyDebugLogLevel.Error, 'Error', message)
             self._socket?.close()
