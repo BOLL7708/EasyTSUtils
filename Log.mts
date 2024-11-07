@@ -20,6 +20,7 @@ export enum EEasyDebugLogLevel {
  * Takes inspiration from LogCat in AndroidStudio.
  */
 export default class Log {
+    private static readonly TAG = this.name
     private static _options: ILogOptions = {
         logLevel: EEasyDebugLogLevel.None,
         useColors: false,
@@ -34,6 +35,7 @@ export default class Log {
      */
     static setOptions(options: ILogOptions): void {
         this._options = options
+        this.i(this.TAG, 'Options updated, logging level is now', EEasyDebugLogLevel[options.logLevel])
     }
 
     /**
@@ -43,6 +45,7 @@ export default class Log {
      */
     static setLogLevel(logLevel: EEasyDebugLogLevel) {
         this._options.logLevel = logLevel
+        this.i(this.TAG, 'Logging level is now', EEasyDebugLogLevel[logLevel])
     }
 
     static v(tag: string, message: string, ...extras: any[]) {

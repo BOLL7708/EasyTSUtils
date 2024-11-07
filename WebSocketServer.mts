@@ -4,8 +4,8 @@ export interface IWebsocketsServerOptions {
     name: string
     port: number
     keepAlive: boolean
-    onServerEvent: TEasyWsServerEventCallback
-    onMessageReceived: TEasyWsServerMessageCallback
+    onServerEvent: TWebSocketServerEventCallback
+    onMessageReceived: TWebSocketServerMessageCallback
 }
 
 export default class WebSocketServer {
@@ -13,6 +13,7 @@ export default class WebSocketServer {
     private readonly _options: IWebsocketsServerOptions
     private _server?: Deno.HttpServer
     private _sessions: { [key: string]: WebSocket } = {}
+    private _shouldShutDown: boolean = false
 
     constructor(options: IWebsocketsServerOptions) {
         this._options = options
@@ -34,50 +35,62 @@ export default class WebSocketServer {
                         return new Response(null, {status: 501})
                     }
 
+                    const subProtocols = (req.headers.get("sec-websocket-protocol") ?? '')
+                        .split(',')
+                        .map(it=>it.trim())
+                        .filter(it=>it.length)
+                    Log.d(this.TAG, 'Client Protocols', subProtocols)
+
                     const {socket, response} = Deno.upgradeWebSocket(req)
-                    Log.v(this.TAG, 'Connection was upgraded', {upgrade})
+                    Log.v(this.TAG, 'Connection was upgraded', {upgrade, subProtocols})
 
                     socket.onopen = (open) => {
                         sessionId = crypto.randomUUID()
                         this._sessions[sessionId] = socket
-                        this._options.onServerEvent(EEasyWsServerState.Connected, sessionId)
-                        Log.i(this.TAG, 'Client connected, session registered', {sessionId, type: open.type})
+                        this._options.onServerEvent(EWebSocketServerState.ClientConnected, undefined, {sessionId, subProtocols})
+                        Log.i(this.TAG, 'Client connected, session registered', {sessionId, subProtocols, type: open.type})
                     }
                     socket.onclose = (close) => {
                         delete this._sessions[sessionId]
-                        this._options.onServerEvent(EEasyWsServerState.Disconnected, sessionId)
-                        Log.i(this.TAG, 'Client disconnected, session removed', {sessionId, type: close.type, code: close.code})
+                        this._options.onServerEvent(EWebSocketServerState.ClientDisconnected, undefined, {sessionId, subProtocols})
+                        Log.i(this.TAG, 'Client disconnected, session removed', {sessionId, subProtocols, type: close.type, code: close.code})
                     }
                     socket.onerror = (error) => {
-                        this._options.onServerEvent(EEasyWsServerState.Error, error.type)
-                        Log.e(this.TAG, `Server error`, {sessionId, type: error.type})
+                        this._options.onServerEvent(EWebSocketServerState.Error, error.type, {sessionId, subProtocols})
+                        Log.e(this.TAG, `Server error`, {sessionId, subProtocols, type: error.type})
                     }
                     socket.onmessage = (message) => {
-                        this._options.onMessageReceived(message.data, sessionId)
-                        Log.v(this.TAG, 'Message received', {sessionId, type: message.type, message: message.data})
+                        this._options.onMessageReceived(message.data, {sessionId, subProtocols})
+                        Log.v(this.TAG, 'Message received', {sessionId, subProtocols, type: message.type, message: message.data})
                     }
                     return response
                 }
             })
             this._server.finished.then(() => {
-                this._options.onServerEvent(EEasyWsServerState.Error, 'Server finished unexpectedly')
-                Log.w(this.TAG, 'Server finished unexpectedly')
-                if (this._options.keepAlive) this.restart()
+                if(!this._shouldShutDown) {
+                    this._options.onServerEvent(EWebSocketServerState.Error, 'Server finished unexpectedly')
+                    Log.w(this.TAG, 'Server finished unexpectedly')
+                    if (this._options.keepAlive) this.restart()
+                }
             })
         } catch (e) {
-            this._options.onServerEvent(EEasyWsServerState.Error, `${e}`)
+            this._options.onServerEvent(EWebSocketServerState.Error, `${e}`)
             Log.e(this.TAG, 'Unable to start server', {port: this._options.port, error: e})
         }
     }
 
     async restart() {
+        this._shouldShutDown = false
         Log.i(this.TAG, 'Restarting server', {port: this._options.port})
         await this.start()
+        this._options.onServerEvent(EWebSocketServerState.ServerStarted)
     }
 
     async shutdown() {
+        this._shouldShutDown = true
         Log.i(this.TAG, 'Shutting down server', {port: this._options.port})
         await this._server?.shutdown()
+        this._options.onServerEvent(EWebSocketServerState.ServerShutdown)
     }
 
     // endregion
@@ -124,16 +137,38 @@ export default class WebSocketServer {
         return sent
     }
 
+    /**
+     * Will always succeed, returns false if there is no session to close.
+     * @param sessionId
+     * @param code
+     * @param reason
+     */
+    disconnectSession(sessionId: string, code?: number, reason?: string): boolean {
+        const socket = this._sessions[sessionId]
+        if(socket) {
+            socket.close(code, reason)
+            delete this._sessions[sessionId]
+            return true
+        }
+        return false
+    }
+
     // endregion
 }
 
 // region Types
-export enum EEasyWsServerState {
-    Connected,
-    Disconnected,
+export enum EWebSocketServerState {
+    ServerStarted,
+    ServerShutdown,
+    ClientConnected,
+    ClientDisconnected,
     Error,
 }
-
-export type TEasyWsServerEventCallback = (state: EEasyWsServerState, value: string | number) => void
-export type TEasyWsServerMessageCallback = (message: string, sessionId: string) => void
+export type TWebSocketServerEventValue = string | number | undefined
+export type TWebSocketServerEventCallback = (state: EWebSocketServerState, value?: TWebSocketServerEventValue, session?: IWebSocketServerSession) => void
+export type TWebSocketServerMessageCallback = (message: string, session: IWebSocketServerSession) => void
+export interface IWebSocketServerSession {
+    sessionId: string
+    subProtocols: string[]
+}
 // endregion

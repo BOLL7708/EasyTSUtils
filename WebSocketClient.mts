@@ -10,6 +10,7 @@ export interface IWebsocketsClientOptions {
     onClose?: IEasyWSCloseCallback
     onMessage?: IEasyWSMessageCallback
     onError?: IEasyWSErrorCallback
+    subProtocolValues?: string[]
 }
 
 export default class WebSocketClient {
@@ -58,13 +59,21 @@ export default class WebSocketClient {
         }
     }
 
+    /**
+     * Will close the connection and restart it.
+     */
     reconnect() {
         this._socket?.close()
-        this.connect()
+        this.startConnectLoop(true)
     }
 
+    /**
+     * Will force the connection to close and stay closed until manually triggering a reconnection.
+     */
     disconnect() {
+        this.stopConnectLoop()
         this._socket?.close()
+        this._socket = undefined
     }
 
     isConnected(): boolean {
@@ -88,7 +97,7 @@ export default class WebSocketClient {
     private connect() {
         this._socket?.close()
         this._socket = undefined
-        this._socket = new WebSocket(this._options.serverUrl)
+        this._socket = new WebSocket(this._options.serverUrl, this._options.subProtocolValues)
         this._socket.onopen = (ev => onOpen(this, ev))
         this._socket.onclose = (ev => onClose(this, ev))
         this._socket.onmessage = (ev => onMessage(this, ev))
