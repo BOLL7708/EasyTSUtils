@@ -1,5 +1,6 @@
 export interface ILogOptions {
     logLevel: EEasyDebugLogLevel
+    stackLevel: EEasyDebugLogLevel
     useColors: boolean
     tagPrefix: string
     tagPostfix: string
@@ -23,6 +24,7 @@ export default class Log {
     private static readonly TAG = this.name
     private static _options: ILogOptions = {
         logLevel: EEasyDebugLogLevel.None,
+        stackLevel: EEasyDebugLogLevel.Warning,
         useColors: false,
         tagPrefix: '',
         tagPostfix: ' ',
@@ -46,6 +48,10 @@ export default class Log {
     static setLogLevel(logLevel: EEasyDebugLogLevel) {
         this._options.logLevel = logLevel
         this.i(this.TAG, 'Logging level is now', EEasyDebugLogLevel[logLevel])
+    }
+    static setStackLevel(stackLevel: EEasyDebugLogLevel) {
+        this._options.stackLevel = stackLevel
+        this.i(this.TAG, 'Stack level is now', EEasyDebugLogLevel[stackLevel])
     }
 
     static v(tag: string, message: string, ...extras: any[]) {
@@ -85,27 +91,53 @@ export default class Log {
         const useColors = this._options.useColors ? '%c' : ''
         if (this._options.capitalizeTag) tag = tag.toLocaleUpperCase()
         const logMessage = `${useColors}${this._options.tagPrefix}${tag}${this._options.tagPostfix}${message}`
+        let color: string = ''
         switch (level) {
             case EEasyDebugLogLevel.Verbose:
-                if (useColors) extras.unshift('color: gray;')
+                color = 'color: gray;'
+                if (useColors) extras.unshift(color)
                 console.log(logMessage, ...extras)
                 break
             case EEasyDebugLogLevel.Debug:
-                if (useColors) extras.unshift('color: turquoise;')
+                color = 'color: turquoise;'
+                if (useColors) extras.unshift(color)
                 console.log(logMessage, ...extras)
                 break
             case EEasyDebugLogLevel.Info:
-                if (useColors) extras.unshift('color: olivedrab;')
+                color = 'color: olivedrab;'
+                if (useColors) extras.unshift(color)
                 console.log(logMessage, ...extras)
                 break
             case EEasyDebugLogLevel.Warning:
-                if (useColors) extras.unshift('color: yellow;')
+                color = 'color: yellow;'
+                if (useColors) extras.unshift(color)
                 console.log(logMessage, ...extras)
                 break
             case EEasyDebugLogLevel.Error:
-                if (useColors) extras.unshift('color: red;')
+                color = 'color: red;'
+                if (useColors) extras.unshift(color)
                 console.log(logMessage, ...extras)
                 break
+        }
+        if(
+            this._options.stackLevel !== EEasyDebugLogLevel.None
+            && this._options.stackLevel >= level.valueOf()
+        ) {
+            const error = new Error()
+            const stack = error.stack
+            if(stack) {
+                const message = stack
+                    .split('\n')
+                    .slice(3)
+                    .filter((it)=>it.includes('file:///'))
+                    .join('\n')
+                if(useColors) {
+                    console.log(`%c${message}`, color)
+                } else {
+                    console.log(message)
+                }
+            }
+            // console.log(stack?.split('\n')[1]?.trim().split(' ')[2], ...extras)
         }
     }
 }
