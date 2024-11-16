@@ -37,7 +37,7 @@ export default class Log {
      */
     static setOptions(options: ILogOptions): void {
         this._options = options
-        this.i(this.TAG, 'Options updated, logging level is now', EEasyDebugLogLevel[options.logLevel])
+        this.i(this.TAG, 'Options updated, log and stack levels are now', EEasyDebugLogLevel[options.logLevel], EEasyDebugLogLevel[options.stackLevel])
     }
 
     /**
@@ -121,7 +121,7 @@ export default class Log {
         }
         if(
             this._options.stackLevel !== EEasyDebugLogLevel.None
-            && this._options.stackLevel >= level.valueOf()
+            && this._options.stackLevel <= level.valueOf()
         ) {
             const error = new Error()
             const stack = error.stack
