@@ -1,6 +1,6 @@
 import Log from './Log.mts'
 
-export interface IWebsocketsServerOptions {
+export interface IWebSocketServerOptions {
     name: string
     port: number
     keepAlive: boolean
@@ -8,14 +8,21 @@ export interface IWebsocketsServerOptions {
     onMessageReceived: TWebSocketServerMessageCallback
 }
 
+export interface IWebSocketSessions {
+    [uuid: string]: {
+        socket: WebSocket,
+        subProtocols: string[]
+    }
+}
+
 export default class WebSocketServer {
     private readonly TAG: string
-    private readonly _options: IWebsocketsServerOptions
+    private readonly _options: IWebSocketServerOptions
     private _server?: Deno.HttpServer
-    private _sessions: { [key: string]: WebSocket } = {}
+    private _sessions: IWebSocketSessions = {}
     private _shouldShutDown: boolean = false
 
-    constructor(options: IWebsocketsServerOptions) {
+    constructor(options: IWebSocketServerOptions) {
         this._options = options
         this.TAG = `${this.constructor.name}->${this._options.name}`
         this.start().then()
@@ -35,10 +42,10 @@ export default class WebSocketServer {
                         return new Response(null, {status: 501})
                     }
 
-                    const subProtocols = (req.headers.get("sec-websocket-protocol") ?? '')
+                    const subProtocols = (req.headers.get('sec-websocket-protocol') ?? '')
                         .split(',')
-                        .map(it=>it.trim())
-                        .filter(it=>it.length)
+                        .map(it => it.trim())
+                        .filter(it => it.length)
                     Log.d(this.TAG, 'Client Protocols', subProtocols)
 
                     const {socket, response} = Deno.upgradeWebSocket(req)
@@ -46,14 +53,29 @@ export default class WebSocketServer {
 
                     socket.onopen = (open) => {
                         sessionId = crypto.randomUUID()
-                        this._sessions[sessionId] = socket
-                        this._options.onServerEvent(EWebSocketServerState.ClientConnected, undefined, {sessionId, subProtocols})
-                        Log.i(this.TAG, 'Client connected, session registered', {sessionId, subProtocols, type: open.type})
+                        this._sessions[sessionId] = {socket, subProtocols}
+                        this._options.onServerEvent(EWebSocketServerState.ClientConnected, undefined, {
+                            sessionId,
+                            subProtocols
+                        })
+                        Log.i(this.TAG, 'Client connected, session registered', {
+                            sessionId,
+                            subProtocols,
+                            type: open.type
+                        })
                     }
                     socket.onclose = (close) => {
                         delete this._sessions[sessionId]
-                        this._options.onServerEvent(EWebSocketServerState.ClientDisconnected, undefined, {sessionId, subProtocols})
-                        Log.i(this.TAG, 'Client disconnected, session removed', {sessionId, subProtocols, type: close.type, code: close.code})
+                        this._options.onServerEvent(EWebSocketServerState.ClientDisconnected, undefined, {
+                            sessionId,
+                            subProtocols
+                        })
+                        Log.i(this.TAG, 'Client disconnected, session removed', {
+                            sessionId,
+                            subProtocols,
+                            type: close.type,
+                            code: close.code
+                        })
                     }
                     socket.onerror = (error) => {
                         this._options.onServerEvent(EWebSocketServerState.Error, error.type, {sessionId, subProtocols})
@@ -61,13 +83,18 @@ export default class WebSocketServer {
                     }
                     socket.onmessage = (message) => {
                         this._options.onMessageReceived(message.data, {sessionId, subProtocols})
-                        Log.v(this.TAG, 'Message received', {sessionId, subProtocols, type: message.type, message: message.data})
+                        Log.v(this.TAG, 'Message received', {
+                            sessionId,
+                            subProtocols,
+                            type: message.type,
+                            message: message.data
+                        })
                     }
                     return response
                 }
             })
             this._server.finished.then(() => {
-                if(!this._shouldShutDown) {
+                if (!this._shouldShutDown) {
                     this._options.onServerEvent(EWebSocketServerState.Error, 'Server finished unexpectedly')
                     Log.w(this.TAG, 'Server finished unexpectedly')
                     if (this._options.keepAlive) this.restart()
@@ -98,40 +125,43 @@ export default class WebSocketServer {
     // region Sending
     private _unreadyStates: number[] = [WebSocket.CONNECTING, WebSocket.CLOSING, WebSocket.CLOSED]
 
-    sendMessage(message: string, toSessionId: string): boolean {
+    sendMessage(message: string, toSessionId: string, withSubProtocol?: string): boolean {
         const session = this._sessions[toSessionId]
-        if (session && !this._unreadyStates.includes(session.readyState)) {
-            session.send(message)
+        if (
+            session && !this._unreadyStates.includes(session.socket.readyState)
+            && (withSubProtocol === undefined || session.subProtocols[0] === withSubProtocol )
+        ) {
+            session.socket.send(message)
             Log.v(this.TAG, 'Sent message', {toSessionId, message})
             return true
         }
         return false
     }
 
-    sendMessageToAll(message: string): number {
+    sendMessageToAll(message: string, subProtocol?: string): number {
         let sent = 0
         for (const sessionId of Object.keys(this._sessions)) {
-            if (this.sendMessage(message, sessionId)) sent++
+            if (this.sendMessage(message, sessionId, subProtocol)) sent++
         }
         Log.v(this.TAG, 'Message sent to all', {sent, message})
         return sent
     }
 
-    sendMessageToOthers(message: string, mySessionId: string): number {
+    sendMessageToOthers(message: string, mySessionId: string, subProtocol?: string): number {
         let sent = 0
         for (const sessionId of Object.keys(this._sessions)) {
             if (sessionId != mySessionId) {
-                if (this.sendMessage(message, sessionId)) sent++
+                if (this.sendMessage(message, sessionId, subProtocol)) sent++
             }
         }
         Log.v(this.TAG, 'Message sent to others', {sent, message, mySessionId})
         return sent
     }
 
-    sendMessageToGroup(message: string, toSessionIds: string[]): number {
+    sendMessageToGroup(message: string, toSessionIds: string[], subProtocol?: string): number {
         let sent = 0
         for (const sessionId of toSessionIds) {
-            if (this.sendMessage(message, sessionId)) sent++
+            if (this.sendMessage(message, sessionId, subProtocol)) sent++
         }
         Log.v(this.TAG, 'Message sent to group', {sent, message, sessionIds: toSessionIds})
         return sent
@@ -144,9 +174,9 @@ export default class WebSocketServer {
      * @param reason
      */
     disconnectSession(sessionId: string, code?: number, reason?: string): boolean {
-        const socket = this._sessions[sessionId]
-        if(socket) {
-            socket.close(code, reason)
+        const session = this._sessions[sessionId]
+        if (session.socket) {
+            session.socket.close(code, reason)
             delete this._sessions[sessionId]
             return true
         }
@@ -164,11 +194,14 @@ export enum EWebSocketServerState {
     ClientDisconnected,
     Error,
 }
+
 export type TWebSocketServerEventValue = string | number | undefined
 export type TWebSocketServerEventCallback = (state: EWebSocketServerState, value?: TWebSocketServerEventValue, session?: IWebSocketServerSession) => void
 export type TWebSocketServerMessageCallback = (message: string, session: IWebSocketServerSession) => void
+
 export interface IWebSocketServerSession {
     sessionId: string
     subProtocols: string[]
 }
+
 // endregion
