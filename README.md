@@ -1,5 +1,5 @@
 # EasyTSUtils
-*Note: superseded by [DenoUtils](https://github.com/BOLL7708/DenoUtils).*
+*Note: superseded by/split into: [DenoUtils](https://github.com/BOLL7708/DenoUtils) and [SharedUtils](https://github.com/BOLL7708/SharedUtils)*
 
 Bespoke shared utilities for [TypeScript](https://typescriptlang.org) projects running in [Deno](https://deno.com).
 
